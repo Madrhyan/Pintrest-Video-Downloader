@@ -1,0 +1,141 @@
+name: 04 - 📌 Pinterest Video Downloader (Custom Edition)
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_urls:
+        description: '📥 لینک ویدیوهای پینترست - چند لینک را با فاصله جدا کنید'
+        required: true
+        type: string
+      video_quality:
+        description: '🎬 انتخاب کیفیت و وضعیت صدا'
+        required: true
+        type: choice
+        default: '240_mute'
+        options:
+          - 'best (Full Quality + Audio)'
+          - '240_mute (Low Quality - No Audio)'
+          - '144_mute (Lowest Quality - No Audio)'
+
+jobs:
+  download-pinterest:
+    name: "📌 Processing Pinterest Download"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Show System Notice
+        run: |
+          echo "========================================"
+          echo "📌 PINTEREST VIDEO DOWNLOADER"
+          echo "========================================"
+          echo "🎯 Selected Mode: ${{ github.event.inputs.video_quality }}"
+          echo "========================================"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global http.postBuffer 524288000
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Start WARP Container
+        run: |
+          echo "Starting Cloudflare WARP..."
+          docker network create warp-net || true
+          docker run -d \
+            --name warp \
+            --restart=always \
+            --network warp-net \
+            -p 1080:1080 \
+            --cap-add NET_ADMIN \
+            -v warp-data:/var/lib/cloudflare-warp \
+            caomingjun/warp
+          sleep 15
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip ffmpeg curl jq bc
+          pip3 install --upgrade yt-dlp
+
+      - name: Pinterest Download Engine
+        env:
+          PINTEREST_URLS: ${{ github.event.inputs.video_urls }}
+          SELECTED_MODE: ${{ github.event.inputs.video_quality }}
+        run: |
+          mkdir -p pinterest_videos
+          read -ra URL_LIST <<< "$PINTEREST_URLS"
+          
+          # تنظیم فرمت بر اساس دستور شما (بدون صدا برای کیفیت پایین)
+          if [[ "$SELECTED_MODE" == "144_mute"* ]]; then
+            FORMAT="worstvideo[height<=144]/worst[height<=144]"
+            echo "⚠️ Mode: 144p - Muted Video Only"
+          elif [[ "$SELECTED_MODE" == "240_mute"* ]]; then
+            FORMAT="worstvideo[height<=240]/worst[height<=240]"
+            echo "⚠️ Mode: 240p - Muted Video Only"
+          else
+            FORMAT="bestvideo+bestaudio/best"
+            echo "🚀 Mode: Best Quality with Audio"
+          fi
+
+          URL_INDEX=0
+          for URL in "${URL_LIST[@]}"; do
+            URL_INDEX=$((URL_INDEX + 1))
+            echo "Downloading URL $URL_INDEX: $URL"
+            
+            # دانلود ویدیو با پروکسی WARP
+            yt-dlp --proxy "socks5://127.0.0.1:1080" \
+                   -f "$FORMAT" \
+                   --no-cache-dir \
+                   --output "pinterest_videos/video_${URL_INDEX}_%(title)s.%(ext)s" \
+                   --no-playlist \
+                   --retries 3 \
+                   "$URL" || echo "❌ Failed to download $URL"
+          done
+
+      - name: Stop WARP Container
+        if: always()
+        run: |
+          docker stop warp || true
+          docker rm warp || true
+
+      - name: Commit and Push
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          
+          # اضافه کردن فایل‌ها به گیت
+          git config set advice.addIgnoredFile false || true
+          git add pinterest_videos/ 2>/dev/null || git add -f pinterest_videos/
+
+          if ! git diff --cached --quiet; then
+            git commit -m "[SYSTEM] Pinterest videos downloaded [skip ci]"
+            
+            PUSH_RETRY=0
+            while [ $PUSH_RETRY -lt 5 ]; do
+              PUSH_RETRY=$((PUSH_RETRY + 1))
+              if timeout 60 git push origin HEAD:"$BRANCH"; then
+                echo "========================================"
+                echo "✅ ویدیوهای پینترست با موفقیت ذخیره شدند!"
+                echo "========================================"
+                break
+              else
+                echo "Push failed, retry $PUSH_RETRY/5..."
+                sleep 5
+                git fetch origin "$BRANCH"
+                git reset --hard origin/"$BRANCH"
+                # در صورت تداخل، دوباره فایل‌ها را اضافه می‌کند
+                git add pinterest_videos/ 2>/dev/null || git add -f pinterest_videos/
+                git diff --cached --quiet || git commit -m "[SYSTEM] Pinterest videos downloaded [skip ci]"
+              fi
+            done
+          else
+            echo "ℹ️ No new files to commit."
+          fi
