@@ -1,0 +1,103 @@
+name: 03 - 💫Cleaner Folder Video پاکسازی پوشه ویدیو
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_delete:
+        description: '⚠️ با زدن این دکمه تمام ویدیوها حذف میشود'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  delete-videos:
+    name: "🗑️ حذف ویدیوها"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm_delete == 'true' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Delete and recreate videos folder
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+
+          echo "========================================"
+          echo "🗑️ در حال حذف پوشه videos..."
+          echo "========================================"
+
+          if [ -d "videos" ]; then
+            rm -rf videos
+            echo "✅ پوشه videos حذف شد"
+          else
+            echo "ℹ️ پوشه videos وجود نداشت"
+          fi
+
+          mkdir -p videos
+
+          echo "# سلام" > videos/README.md
+          echo "هنوز هیچ ویدیویی اینجا نیست" >> videos/README.md
+          echo "" >> videos/README.md
+          echo "---" >> videos/README.md
+
+          echo "✅ پوشه videos با README.md خالی ایجاد شد"
+
+          git add -f videos/
+
+          if ! git diff --cached --quiet; then
+            git commit -m "[SYSTEM] حذف تمام ویدیوها [skip ci]"
+
+            PUSH_RETRY=0
+            while [ $PUSH_RETRY -lt 5 ]; do
+              PUSH_RETRY=$((PUSH_RETRY + 1))
+              if timeout 60 git push origin HEAD:"$BRANCH"; then
+                echo ""
+                echo "========================================"
+                echo "✅ تمام ویدیوها با موفقیت حذف شدند!"
+                echo "========================================"
+                break
+              else
+                echo "Push failed, retry $PUSH_RETRY/5..."
+                sleep 3
+                git fetch origin "$BRANCH"
+                git reset --hard origin/"$BRANCH"
+                rm -rf videos
+                mkdir -p videos
+                echo "# سلام" > videos/README.md
+                echo "هنوز هیچ ویدیویی اینجا نیست" >> videos/README.md
+                echo "" >> videos/README.md
+                echo "---" >> videos/README.md
+                git add -f videos/
+                git diff --cached --quiet || git commit -m "[SYSTEM] حذف تمام ویدیوها [skip ci]"
+              fi
+            done
+          else
+            echo "ℹ️ تغییری برای commit وجود ندارد"
+          fi
+
+  not-confirmed:
+    name: "❌ لغو شد"
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm_delete != 'true' }}
+    steps:
+      - name: Show cancellation message
+        run: |
+          echo ""
+          echo "========================================"
+          echo "❌ عملیات لغو شد"
+          echo "========================================"
+          echo ""
+          echo "⚠️ برای حذف ویدیوها باید تیک تأیید را بزنید"
+          echo ""
+          echo "========================================"
