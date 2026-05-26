@@ -1,17 +1,17 @@
-name: 03 - 💫Cleaner Folder Video پاکسازی پوشه ویدیو
+name: 05 - 🗑️ پاکسازی ویدیوهای پینترست
 
 on:
   workflow_dispatch:
     inputs:
       confirm_delete:
-        description: '⚠️ با زدن این دکمه تمام ویدیوها حذف میشود'
+        description: '⚠️ با زدن این دکمه تمام ویدیوهای دانلود شده پینترست حذف میشود'
         required: true
         default: false
         type: boolean
 
 jobs:
-  delete-videos:
-    name: "🗑️ حذف ویدیوها"
+  delete-pinterest-videos:
+    name: "🗑️ حذف ویدیوهای پینترست"
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.confirm_delete == 'true' }}
     permissions:
@@ -29,34 +29,34 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Delete and recreate videos folder
+      - name: Delete and Recreate Pinterest Folder
         run: |
           BRANCH="${GITHUB_REF_NAME}"
 
           echo "========================================"
-          echo "🗑️ در حال حذف پوشه videos..."
+          echo "🗑️ در حال حذف پوشه pinterest_videos..."
           echo "========================================"
 
-          if [ -d "videos" ]; then
-            rm -rf videos
-            echo "✅ پوشه videos حذف شد"
+          if [ -d "pinterest_videos" ]; then
+            rm -rf pinterest_videos
+            echo "✅ پوشه pinterest_videos حذف شد"
           else
-            echo "ℹ️ پوشه videos وجود نداشت"
+            echo "ℹ️ پوشه pinterest_videos وجود نداشت"
           fi
 
-          mkdir -p videos
+          mkdir -p pinterest_videos
 
-          echo "# سلام" > videos/README.md
-          echo "هنوز هیچ ویدیویی اینجا نیست" >> videos/README.md
-          echo "" >> videos/README.md
-          echo "---" >> videos/README.md
+          echo "# Pinterest Videos" > pinterest_videos/README.md
+          echo "پوشه ویدیوهای دانلود شده پینترست" >> pinterest_videos/README.md
+          echo "در حال حاضر هیچ فایلی اینجا نیست." >> pinterest_videos/README.md
 
-          echo "✅ پوشه videos با README.md خالی ایجاد شد"
+          echo "✅ پوشه pinterest_videos با README جدید بازسازی شد"
 
-          git add -f videos/
+          git config set advice.addIgnoredFile false || true
+          git add pinterest_videos/ 2>/dev/null || git add -f pinterest_videos/
 
           if ! git diff --cached --quiet; then
-            git commit -m "[SYSTEM] حذف تمام ویدیوها [skip ci]"
+            git commit -m "[SYSTEM] پاکسازی پوشه ویدیوهای پینترست [skip ci]"
 
             PUSH_RETRY=0
             while [ $PUSH_RETRY -lt 5 ]; do
@@ -64,26 +64,23 @@ jobs:
               if timeout 60 git push origin HEAD:"$BRANCH"; then
                 echo ""
                 echo "========================================"
-                echo "✅ تمام ویدیوها با موفقیت حذف شدند!"
+                echo "✅ پوشه با موفقیت پاکسازی و سینک شد!"
                 echo "========================================"
                 break
               else
                 echo "Push failed, retry $PUSH_RETRY/5..."
-                sleep 3
+                sleep 5
                 git fetch origin "$BRANCH"
                 git reset --hard origin/"$BRANCH"
-                rm -rf videos
-                mkdir -p videos
-                echo "# سلام" > videos/README.md
-                echo "هنوز هیچ ویدیویی اینجا نیست" >> videos/README.md
-                echo "" >> videos/README.md
-                echo "---" >> videos/README.md
-                git add -f videos/
-                git diff --cached --quiet || git commit -m "[SYSTEM] حذف تمام ویدیوها [skip ci]"
+                rm -rf pinterest_videos
+                mkdir -p pinterest_videos
+                echo "# Pinterest Videos" > pinterest_videos/README.md
+                git add pinterest_videos/ 2>/dev/null || git add -f pinterest_videos/
+                git diff --cached --quiet || git commit -m "[SYSTEM] پاکسازی پوشه ویدیوهای پینترست [skip ci]"
               fi
             done
           else
-            echo "ℹ️ تغییری برای commit وجود ندارد"
+            echo "ℹ️ پوشه از قبل تمیز بود و تغییری وجود ندارد"
           fi
 
   not-confirmed:
@@ -95,7 +92,7 @@ jobs:
         run: |
           echo ""
           echo "========================================"
-          echo "❌ عملیات لغو شد"
+          echo "❌ عملیات پاکسازی لغو شد"
           echo "========================================"
           echo ""
           echo "⚠️ برای حذف ویدیوها باید تیک تأیید را بزنید"
